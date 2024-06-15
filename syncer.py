@@ -9,6 +9,7 @@ CONFIG_PATH = './config.json'
 CACHE_PATH = './cache/'
 MODS_PATH = './mods/'
 
+
 def create_new_config():
     with open(CONFIG_PATH, 'w') as config_file:
         config_file.write(
@@ -45,15 +46,15 @@ def get_or_create_client_config():
     if not os.path.exists(CONFIG_PATH):
         create_new_config()
     config_dict = read_config_file()
-    if "api_key" not in config_dict or "oauth2" not in config_dict:
-        api_key, oauth2, client = get_new_client()
-        config_dict["api_key"] = api_key
-        config_dict["oauth2"] = oauth2
+
+    if missing_keys := {"api_key", "oauth2", "game"} - config_dict.keys():
+        if {"api_key", "oauth2"} & missing_keys:
+            api_key, oauth2, client = get_new_client()
+            config_dict.update({"api_key": api_key, "oauth2": oauth2})
+        if "game" in missing_keys:
+            config_dict["game"] = input('Please enter the name of desired Mod.IO game.\n>: ')
         write_config_file(config_dict)
-    if "game" not in config_dict:
-        game = input('Please enter the name of desired Mod.IO game.\n>: ')
-        config_dict["game"] = game
-        write_config_file(config_dict)
+
     if 'client' not in locals():
         client = modio.Client(api_key=config_dict["api_key"], access_token=config_dict["oauth2"])
     return config_dict, client
@@ -67,17 +68,8 @@ def get_subbed_mods():
 
 def get_highest_file_url(mod):
     files = mod.get_files().results
-    url_selected = ''
-    highest_version = parse("0.0.0")
-    for file in files:
-        version_string = file.version
-        if version_string is None:
-            version_string = "0.0.0"
-        version = parse(version_string)
-        if version > highest_version:
-            highest_version = version
-            url_selected = file.url
-    return url_selected
+    highest_file = max(files, key=lambda file: parse(file.version or "0.0.0"), default=None)
+    return highest_file.url if highest_file else ''
 
 
 def get_newest_mod_urls(mods):
@@ -86,12 +78,8 @@ def get_newest_mod_urls(mods):
 
 def download_file(url):
     response = requests.get(url)
-    if "content-disposition" in response.headers:
-        content_disposition = response.headers["content-disposition"]
-        filename = content_disposition.split("filename=")[1]
-    else:
-        filename = response.url.split("/")[-1].split("?")[0]
-    with open(CACHE_PATH+filename, mode="wb") as file:
+    filename = response.headers.get("content-disposition", "").split("filename=")[-1] or response.url.split("/")[-1].split("?")[0]
+    with open(os.path.join(CACHE_PATH, filename), mode="wb") as file:
         file.write(response.content)
     print(f"Downloaded file {filename}")
 
@@ -106,8 +94,9 @@ def update_subbed_mods():
 def extract_mods():
     for item in os.listdir(CACHE_PATH):
         if item.endswith(".zip"):
-            with zipfile.ZipFile(os.path.abspath(CACHE_PATH+item)) as zip_ref:
+            with zipfile.ZipFile(os.path.abspath(os.path.join(CACHE_PATH, item))) as zip_ref:
                 zip_ref.extractall(MODS_PATH)
 
+
 # update_subbed_mods()
-extract_mods()
+# extract_mods()
